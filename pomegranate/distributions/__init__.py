@@ -11,6 +11,7 @@ from .distributions import *
 from .UniformDistribution import UniformDistribution
 from .BernoulliDistribution import BernoulliDistribution
 from .NormalDistribution import NormalDistribution
+from .TrueBetaDistribution import TrueBetaDistribution
 from .LogNormalDistribution import LogNormalDistribution
 from .ExponentialDistribution import ExponentialDistribution
 from .BetaDistribution import BetaDistribution

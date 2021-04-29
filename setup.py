@@ -34,6 +34,7 @@ distributions = [
     'UniformDistribution',
     'BernoulliDistribution',
     'NormalDistribution',
+    'TrueBetaDistribution',
     'LogNormalDistribution',
     'ExponentialDistribution',
     'BetaDistribution',
