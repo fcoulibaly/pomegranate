@@ -26,6 +26,7 @@ from .KernelDensities import TriangleKernelDensity
 
 from .IndependentComponentsDistribution import IndependentComponentsDistribution
 from .MultivariateGaussianDistribution import MultivariateGaussianDistribution
+from .PolyExpBetaNormal import PolyExpBetaNormal
 from .DirichletDistribution import DirichletDistribution
 from .ConditionalProbabilityTable import ConditionalProbabilityTable
 from .JointProbabilityTable import JointProbabilityTable
