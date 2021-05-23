@@ -56,13 +56,13 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             self.sigmas = numpy.array(parameters[5])
 
     def __cinit__(self, alpha=1.0, beta=1.0, acoeffs=[], bcoeffs=[], ccoeffs=[], sigmas=[], frozen=False):
-        printf("CINIT 1\n")
+        # printf("CINIT 1\n")
         """
         Take in the mean vector and the covariance matrix.
         """
         self.name = "PolyExpBetaNormal"
         self.frozen = frozen
-        self.d = len(sigmas)
+        self.d = len(sigmas) + 1
 
         self.alpha = alpha
         self.beta = beta
@@ -83,7 +83,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         for di in range(self.d-1):
             self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI)
             self.two_sigma_squared[di] = 1. / (2 * self.sigmas[di] ** 2) if self.sigmas[di] > 0 else 0
-        printf("CINIT 2\n")
+        # printf("CINIT 2\n")
 
         # self.name = "PolyExpBetaNormal"
         # self.frozen = frozen
@@ -117,11 +117,11 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
 
     def __reduce__(self):
         """Serialize the distribution for pickle."""
-        printf("REDUCE 1\n")
+        # printf("REDUCE 1\n")
         return self.__class__, (self.alpha, self.beta, self.acoeffs, self.bcoeffs, self.ccoeffs, self.sigmas, self.frozen)
 
     def __dealloc__(self):
-        printf("DEALLOC 1\n")
+        # printf("DEALLOC 1\n")
         free(self.log_sigma_sqrt_2_pi)
         free(self.two_sigma_squared)
         # free(self._inv_dot_mu)
@@ -132,17 +132,17 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         # free(self.pair_w_sum)
 
     cdef void _log_probability(self, double* X, double* logp, int n) nogil:
-        printf("LOGPRO 1\n")
-        cdef int i, j, d = self.d + 1
+        # printf("LOGPRO 1\n")
+        cdef int i, j, d = self.d
 
         for i in range(n):
             # if isnan(X[i*d + j]):
             # TODO implement nan handling
-            logp[i] = X[i*d] ** (self._alpha - 1) + (1 - X[i*d]) ** (1 - self._beta) + lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta)
-            # printf("%d    %f\n", i, logp[i])
+            logp[i] = X[i*d] ** (self._alpha - 1) + (1 - X[i*d]) ** (self._beta - 1) + lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta)
+            # printf("ab: %d    %f       %f         %f       X= %f         %f\n", i, logp[i], self._alpha, self._beta, X[i*d],  lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta))
             for j in range(0, d - 1):
-                tmp = self.log_sigma_sqrt_2_pi[j] - ((X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d+j+1]))) ** 2) * self.two_sigma_squared[j]
-                # printf("%d %f   %f     %f        %f\n", j, tmp, (X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d+j+1]))), self.log_sigma_sqrt_2_pi[j], self.two_sigma_squared[j])
+                tmp = self.log_sigma_sqrt_2_pi[j] - ((X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d]))) ** 2) * self.two_sigma_squared[j]
+                # printf("%d %f   %f     %f        %f\n", j, tmp, (X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d]))), self.log_sigma_sqrt_2_pi[j], self.two_sigma_squared[j])
                 logp[i] += tmp
                 # logp[i] += self.log_sigma_sqrt_2_pi[j] - ((X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d+j+1]))) ** 2) * self.two_sigma_squared[j]
 
@@ -648,8 +648,8 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double gnorm = self.vecnorm(gfk)
         while (gnorm > gtol) and (k < maxiter):
             self.dotmv(Hk, gfk, pk)
-            with gil:
-                print(xk, pk,  gfk)
+            # with gil:
+                # print(xk, pk,  gfk)
             pk[0] = -pk[0]; pk[1] = -pk[1]; pk[2] = -pk[2]
             # printf(xk, pk, gfk)
             tmp_fval = old_fval
@@ -738,23 +738,23 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double mu, var
         cdef int i, di
 
-        printf("DEBUG 1: %d\n", self.d)
+        # printf("DEBUG 1: %d\n", self.d)
         self.compute_bins(bins, weights, n)
 
-        printf("DEBUG 2\n")
+        # printf("DEBUG 2\n")
         for di in range(d-1):
-            printf("DEBUG 30\n")
+            # printf("DEBUG 30\n")
             self.compute_bins_sum_ones(bins, wcparams.sws, weights, n, 1, 0)
-            printf("DEBUG 31\n")
+            # printf("DEBUG 31\n")
             self.compute_bins_sum(bins, wcparams.sys, X, weights, n, d, di+1)
-            printf("DEBUG 32\n")
+            # printf("DEBUG 32\n")
             self.compute_bins_mean(bins, wcparams.xms, X, weights, n, d, 0)
-            printf("DEBUG 4\n")
-            with gil:
-                print(bins)
-                print(wcparams.sws)
-                print(wcparams.sys)
-                print(wcparams.xms)
+            # printf("DEBUG 4\n")
+            # with gil:
+                # print(bins)
+                # print(wcparams.sws)
+                # print(wcparams.sys)
+                # print(wcparams.xms)
             accu_sw = 0
             accu_sy = 0
             accu_sy2 = 0
@@ -768,14 +768,14 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
                 accu_sw += weights[i]
                 accu_sy += accu_tmp
                 accu_sy2 += accu_tmp * accu_tmp #TODO weight**2 ??!
-            printf("DEBUG 5\n")
+            # printf("DEBUG 5\n")
             wcparams.sw = accu_sw
             wcparams.sy = accu_sy
             wcparams.sy2 = accu_sy2
 
-            printf("DEBUG 6: %f %f %f %f %f\n", wcparams.sw,  wcparams.sy,  wcparams.sy2, min_y, max_y)
+            # printf("DEBUG 6: %f %f %f %f %f\n", wcparams.sw,  wcparams.sy,  wcparams.sy2, min_y, max_y)
             self.compute_polyexp_coeffs(&wcparams, min_y, max_y - min_y, 25.0, polyexp_coeffs + di * 3)
-            printf("DEBUG 7\n")
+            # printf("DEBUG 7\n")
             
             acoeff = polyexp_coeffs[di*3+0]
             bcoeff = polyexp_coeffs[di*3+1]
@@ -788,9 +788,9 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
                 accu_sy += accu_tmp
                 accu_sy2 += accu_tmp * accu_x
             sigmas[di] = csqrt(accu_sy2 / accu_sw - cpow(accu_sy, 2) / cpow(accu_sw, 2))
-            printf("AAAAAAAAAAA %f\n", sigmas[di], di)
+            # printf("AAAAAAAAAAA %f\n", sigmas[di], di)
 
-        printf("DEBUG 8\n")
+        # printf("DEBUG 8\n")
         for i in range(n):
             item = X[i * d]
             w_sum += weights[i]
@@ -800,7 +800,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         var = x2_sum / w_sum - x_sum ** 2.0 / w_sum ** 2.0
 
         with gil:
-            printf("DEBUG 10\n")
+            # printf("DEBUG 10\n")
             for di in range(d-1):
                 self._acoeffs[di] = polyexp_coeffs[di*3]
                 self._bcoeffs[di] = polyexp_coeffs[di*3+1]
@@ -810,19 +810,19 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             self._beta = (((1 - mu) ** 2.0 * mu) / var - (1 - mu))
             self.alpha = self._alpha
             self.beta = self._beta
-            print(self.acoeffs)
-            print(self.bcoeffs)
-            print(self.ccoeffs)
-            print(self.alpha)
-            print(self.beta)
-            print(self.sigmas)
+            # print(self.acoeffs)
+            # print(self.bcoeffs)
+            # print(self.ccoeffs)
+            # print(self.alpha)
+            # print(self.beta)
+            # print(self.sigmas)
             
-        printf("DEBUG 11\n")
+        # printf("DEBUG 11\n")
         free(sigmas)
         free(polyexp_coeffs)
 
     def from_summaries(self, inertia=0.0, min_covar=1e-5):
-        printf("FROM_SUMMARIES 1\n")
+        # printf("FROM_SUMMARIES 1\n")
         """
         Set the parameters of this Distribution to maximize the likelihood of
         the given sample. Items holds some sort of sequence. If weights is
@@ -835,7 +835,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         if self.frozen == True:# or w_sum < 1e-7:
                 return
 
-        for di in range(d):
+        for di in range(d-1):
             self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI)
             self.two_sigma_squared[di] = 1. / (2 * self.sigmas[di] ** 2) if self.sigmas[di] > 0 else 0
 
@@ -843,7 +843,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         self.clear_summaries()
 
     def clear_summaries(self):
-        printf("CLEAR_SUMMARIES 1\n")
+        # printf("CLEAR_SUMMARIES 1\n")
         """Clear the summary statistics stored in the object."""
         pass
         # memset(self._sigmas, 0, self.d*sizeof(double))
@@ -857,22 +857,23 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
 
     @classmethod
     def from_samples(cls, X, weights=None, **kwargs):
-        printf("FROM_SAMPLES 1\n")
+        # print("FROM_SAMPLES 1", X.shape)
         """Fit a distribution to some data without pre-specifying it."""
 
         distribution = cls.blank(X.shape[1])
+        # printf("FROM_SAMPLES 2\n")
         distribution.fit(X, weights, **kwargs)
-        printf("FROM_SAMPLES 2\n")
+        # printf("FROM_SAMPLES 3\n")
         return distribution
 
     @classmethod
     def blank(cls, d=2):
-        printf("BLANK 1\n")
+        # printf("BLANK 1\n")
         sigmas = numpy.zeros(d-1)
         acoeffs = numpy.zeros(d-1)
         bcoeffs = numpy.zeros(d-1)
         ccoeffs = numpy.zeros(d-1)
         alpha = 1.0
         beta = 1.0
-        printf("BLANK 2\n")
+        # printf("BLANK 2\n")
         return cls(alpha, beta, acoeffs, bcoeffs, ccoeffs, sigmas)
