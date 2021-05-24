@@ -7,6 +7,7 @@
 import numpy
 import scipy
 cimport cython
+import matplotlib.pyplot as plt
 
 from libc.stdlib cimport calloc
 from libc.stdlib cimport free
@@ -194,16 +195,19 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double curval = pos[curind]
         cdef int offset = 0
         bins[0][0] = 0
+        # printf("BINS: ")
         for i in range(n):
             cumw += weights[i]
             if cumw > curval:
                 offset = max(i, bins[curind][0] + 1)
+                # printf("%d, ", offset)
                 bins[curind][1] = offset
                 curind += 1
                 curval = pos[curind]
                 bins[curind][0] = offset
                 if curind + 1 >= nb_bins:
                     break
+        # printf("\n")
         bins[nb_bins-1][1] = n
 
         return
@@ -215,6 +219,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double accu = 0
 
         cdef int i,j
+        printf("MEAN: ")
         for i in range(nb_bins):
             bl = bins[i][0]
             bh = bins[i][1]
@@ -223,7 +228,12 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             for j in range(bl, bh):
                 accu += x_view[j*d+di] * weights[j]  
                 cumr += weights[j]
-            res[i] = accu / cumr
+            if cumr == 0:
+                res[i] = 0
+            else:
+                res[i] = accu / cumr
+            printf("%f, ", res[i])
+        printf("\n")
         
         return
 
@@ -721,6 +731,20 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         The sufficient statistics for a multivariate gaussian update is the sum of
         each column, and the sum of the outer products of the vectors.
         """
+        with gil:
+            npweights = numpy.zeros((n))
+            xx = numpy.zeros((n, d))
+            nn = n
+            dd = d
+            for ii in range(nn):
+                npweights[ii] = weights[ii]
+                for j in range(dd):
+                    xx[ii][j] = X[ii*d+j]
+            plt.scatter(xx[:,0], xx[:,1], c=npweights)
+            plt.show()
+            # plt.hist(npweights);plt.show()
+
+
         cdef double * polyexp_coeffs = <double*> calloc(d * 3, sizeof(double))
         cdef double * sigmas = <double*> calloc(d, sizeof(double))
         cdef double x_sum = 0.0, x2_sum = 0.0, w_sum = 0.0
@@ -741,8 +765,13 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         # printf("DEBUG 1: %d\n", self.d)
         self.compute_bins(bins, weights, n)
 
+        cdef double cumexpweights
+        cdef double cumexpweightspond
+        cdef double tmpexpweight = 0.0
+            
         # printf("DEBUG 2\n")
         for di in range(d-1):
+
             # printf("DEBUG 30\n")
             self.compute_bins_sum_ones(bins, wcparams.sws, weights, n, 1, 0)
             # printf("DEBUG 31\n")
@@ -762,18 +791,37 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             max_y = 0
             for i in range(n):
                 accu_x = X[i * d + di + 1]
-                min_y = cmin(min_y, accu_x)
-                max_y = cmax(max_y, accu_x)
-                accu_tmp = accu_x * weights[i]
+                min_y = cmin(accu_x, min_y)
+                max_y = cmax(accu_x, max_y)
                 accu_sw += weights[i]
-                accu_sy += accu_tmp
-                accu_sy2 += accu_tmp * accu_tmp #TODO weight**2 ??!
+                accu_sy += accu_x * weights[i]
+                accu_sy2 += accu_x * accu_x * weights[i] #TODO weight**2 ??!
             # printf("DEBUG 5\n")
             wcparams.sw = accu_sw
             wcparams.sy = accu_sy
             wcparams.sy2 = accu_sy2
 
+            softmaxcum = 0.0
+            softmaxcumpond = 0.0
+            softmincum = 0.0
+            softmincumpond = 0.0
+            softmaxtmp = 0.0
+            softmintmp = 0.0
+            for i in range(n):
+                item = X[i*d+di+1]
+                softmaxtmp = cexp(200*(item-max_y)) * weights[i]
+                softmaxcum += softmaxtmp
+                softmaxcumpond += softmaxtmp * item
+                softmintmp = cexp(200*(min_y-item)) * weights[i] # TODO exp factor can be factorized
+                softmincum += softmintmp
+                softmincumpond += softmintmp * item
+            min_y = softmincumpond / softmincum
+            max_y = softmaxcumpond / softmaxcum
+            printf("BOUNDS BOUNDS  BOUNDS   %f   %f\n", min_y, max_y)
+
+
             # printf("DEBUG 6: %f %f %f %f %f\n", wcparams.sw,  wcparams.sy,  wcparams.sy2, min_y, max_y)
+            printf("BOOOOOOU: %f  %f  %f  %d\n", wcparams.sw, wcparams.sy, wcparams.sy2, di)
             self.compute_polyexp_coeffs(&wcparams, min_y, max_y - min_y, 25.0, polyexp_coeffs + di * 3)
             # printf("DEBUG 7\n")
             
@@ -806,6 +854,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
                 self._bcoeffs[di] = polyexp_coeffs[di*3+1]
                 self._ccoeffs[di] = polyexp_coeffs[di*3+2]
                 self._sigmas[di] = sigmas[di]
+            print("BIMBABA: ", self.acoeffs, self.bcoeffs, self.ccoeffs)
             self._alpha = ((mu ** 2.0 * (1-mu)) / var - mu)
             self._beta = (((1 - mu) ** 2.0 * mu) / var - (1 - mu))
             self.alpha = self._alpha
