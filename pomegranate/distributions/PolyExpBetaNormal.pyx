@@ -132,20 +132,59 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         # free(self.pair_sum)
         # free(self.pair_w_sum)
 
+
+    def log_probability(self, X):
+        """
+        What's the probability of a given tuple under this mixture? It's the
+        product of the probabilities of each X in the tuple under their
+        respective distribution, which is the sum of the log probabilities.
+        """
+
+        cdef int i, j, n
+        cdef numpy.ndarray X_ndarray
+        cdef double* X_ptr
+        cdef double logp
+        cdef numpy.ndarray logp_array
+        cdef double* logp_ptr
+
+        n = len(X)
+
+        X_ndarray = numpy.asarray(X, dtype='float64')
+        X_ptr = <double*> X_ndarray.data
+
+        logp_array = numpy.empty(n, dtype='float64')
+        logp_ptr = <double*> logp_array.data
+
+        with nogil:
+            self._log_probability(X_ptr, logp_ptr, n)
+
+        return logp_array
+
+
     cdef void _log_probability(self, double* X, double* logp, int n) nogil:
         # printf("LOGPRO 1\n")
         cdef int i, j, d = self.d
 
+        memset(logp, 0, n*sizeof(double))
+
         for i in range(n):
-            # if isnan(X[i*d + j]):
-            # TODO implement nan handling
-            logp[i] = X[i*d] ** (self._alpha - 1) + (1 - X[i*d]) ** (self._beta - 1) + lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta)
-            # printf("ab: %d    %f       %f         %f       X= %f         %f\n", i, logp[i], self._alpha, self._beta, X[i*d],  lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta))
-            for j in range(0, d - 1):
-                tmp = self.log_sigma_sqrt_2_pi[j] - ((X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d]))) ** 2) * self.two_sigma_squared[j]
-                # printf("%d %f   %f     %f        %f\n", j, tmp, (X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d]))), self.log_sigma_sqrt_2_pi[j], self.two_sigma_squared[j])
-                logp[i] += tmp
-                # logp[i] += self.log_sigma_sqrt_2_pi[j] - ((X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d+j+1]))) ** 2) * self.two_sigma_squared[j]
+            if X[i*d] <= 0 or X[i*d] >= 1:
+                logp[i] = 0
+            else:
+                logp[i] = _log(X[i*d]) * (self._alpha - 1) + _log(1 - X[i*d]) * (self._beta - 1) + lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta)
+                for j in range(0, d - 1):
+                    logp[i] += self.log_sigma_sqrt_2_pi[j] - ((X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d]))) ** 2) * self.two_sigma_squared[j]
+                logp[i] /= 1
+
+        # printf("%f %f, %f %f %f %f, %f %f\n", self._alpha, self._beta, self._acoeffs[0], self._bcoeffs[0], self._ccoeffs[0], self._sigmas[0], self.log_sigma_sqrt_2_pi[0], self.two_sigma_squared[0])
+        # with gil:
+            # nplog = numpy.zeros((n))
+            # nn = n
+            # for ii in range(nn):
+                # nplog[ii] = logp[ii]
+            # plt.hist(nplog);plt.show()
+
+
 
     # cdef double _log_probability_missing(self, double* X) nogil: TODO implement nan handling
             # cdef double logp
@@ -219,7 +258,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double accu = 0
 
         cdef int i,j
-        printf("MEAN: ")
+        # printf("MEAN: ")
         for i in range(nb_bins):
             bl = bins[i][0]
             bh = bins[i][1]
@@ -232,8 +271,8 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
                 res[i] = 0
             else:
                 res[i] = accu / cumr
-            printf("%f, ", res[i])
-        printf("\n")
+            # printf("%f, ", res[i])
+        # printf("\n")
         
         return
 
@@ -668,7 +707,8 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             if status:
                 break
 
-            xkp1[0] = xk[0] + alpha_k * pk[0]; xkp1[1] = xk[1] + alpha_k * pk[1]; xkp1[2] = xk[2] + alpha_k * pk[2]
+            # xkp1[0] = xk[0] + alpha_k * pk[0]; xkp1[1] = xk[1] + alpha_k * pk[1]; xkp1[2] = xk[2] + alpha_k * pk[2]
+            xkp1[0] = cmin(cmax(xk[0] + alpha_k * pk[0], 0.0), 1); xkp1[1] = cmin(cmax(xk[1] + alpha_k * pk[1], -1.0), 1); xkp1[2] = cmin(cmax(xk[2] + alpha_k * pk[2], 1.0), 25.0)
             sk[0] = xkp1[0] - xk[0]; sk[1] = xkp1[1] - xk[1]; sk[2] = xkp1[2] - xk[2]
             xk[0] = xkp1[0]; xk[1] = xkp1[1]; xk[2] = xkp1[2]
 
@@ -731,17 +771,17 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         The sufficient statistics for a multivariate gaussian update is the sum of
         each column, and the sum of the outer products of the vectors.
         """
-        with gil:
-            npweights = numpy.zeros((n))
-            xx = numpy.zeros((n, d))
-            nn = n
-            dd = d
-            for ii in range(nn):
-                npweights[ii] = weights[ii]
-                for j in range(dd):
-                    xx[ii][j] = X[ii*d+j]
-            plt.scatter(xx[:,0], xx[:,1], c=npweights)
-            plt.show()
+        # with gil:
+            # npweights = numpy.zeros((n))
+            # xx = numpy.zeros((n, d))
+            # nn = n
+            # dd = d
+            # for ii in range(nn):
+                # npweights[ii] = weights[ii]
+                # for j in range(dd):
+                    # xx[ii][j] = X[ii*d+j]
+            # plt.scatter(xx[:,0], xx[:,1], c=npweights)
+            # plt.show()
             # plt.hist(npweights);plt.show()
 
 
@@ -801,6 +841,9 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             wcparams.sy = accu_sy
             wcparams.sy2 = accu_sy2
 
+            if accu_sw < 1e-7:
+                return 0
+
             softmaxcum = 0.0
             softmaxcumpond = 0.0
             softmincum = 0.0
@@ -817,11 +860,11 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
                 softmincumpond += softmintmp * item
             min_y = softmincumpond / softmincum
             max_y = softmaxcumpond / softmaxcum
-            printf("BOUNDS BOUNDS  BOUNDS   %f   %f\n", min_y, max_y)
+            # printf("BOUNDS BOUNDS  BOUNDS   %f   %f\n", min_y, max_y)
 
 
             # printf("DEBUG 6: %f %f %f %f %f\n", wcparams.sw,  wcparams.sy,  wcparams.sy2, min_y, max_y)
-            printf("BOOOOOOU: %f  %f  %f  %d\n", wcparams.sw, wcparams.sy, wcparams.sy2, di)
+            # printf("BOOOOOOU: %f  %f  %f  %d\n", wcparams.sw, wcparams.sy, wcparams.sy2, di)
             self.compute_polyexp_coeffs(&wcparams, min_y, max_y - min_y, 25.0, polyexp_coeffs + di * 3)
             # printf("DEBUG 7\n")
             
@@ -854,7 +897,9 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
                 self._bcoeffs[di] = polyexp_coeffs[di*3+1]
                 self._ccoeffs[di] = polyexp_coeffs[di*3+2]
                 self._sigmas[di] = sigmas[di]
-            print("BIMBABA: ", self.acoeffs, self.bcoeffs, self.ccoeffs)
+                self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI)
+                self.two_sigma_squared[di] = 1. / (2 * self.sigmas[di] ** 2) if self.sigmas[di] > 0 else 0
+            # print("BIMBABA: ", self.acoeffs, self.bcoeffs, self.ccoeffs)
             self._alpha = ((mu ** 2.0 * (1-mu)) / var - mu)
             self._beta = (((1 - mu) ** 2.0 * mu) / var - (1 - mu))
             self.alpha = self._alpha
@@ -884,9 +929,6 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         if self.frozen == True:# or w_sum < 1e-7:
                 return
 
-        for di in range(d-1):
-            self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI)
-            self.two_sigma_squared[di] = 1. / (2 * self.sigmas[di] ** 2) if self.sigmas[di] > 0 else 0
 
 
         self.clear_summaries()
