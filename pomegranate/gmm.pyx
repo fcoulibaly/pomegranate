@@ -7,11 +7,13 @@ from libc.stdlib cimport calloc
 from libc.stdlib cimport free
 from libc.stdlib cimport malloc
 from libc.math cimport exp as cexp
+from libc.stdio cimport printf
 
 import time
 
 import numpy
 cimport numpy
+import matplotlib.pyplot as plt
 
 from .base cimport Model
 from .kmeans import Kmeans
@@ -221,16 +223,21 @@ cdef class GeneralMixtureModel(BayesModel):
             f = delayed(self.summarize)
 
             while improvement > stop_threshold and iteration < max_iterations + 1:
+            # while iteration < max_iterations + 1:
+                # print("DEBUG 1")
                 epoch_start_time = time.time()
                 step_size = 1 - ((1 - inertia) * (2 + iteration) ** -lr_decay)
 
+                # print("DEBUG 2")
                 # Update parameters from the stored sufficient statistics
                 self.from_summaries(step_size, pseudocount)
+                # print("DEBUG 3")
 
                 # Calculate new sufficient statistics from the data
                 log_probability_sum = sum(parallel(f(*batch) for batch in 
                     data_generator.batches()))
 
+                # print("DEBUG 4")
                 if iteration == 0:
                     initial_log_probability_sum = log_probability_sum
                 else:
@@ -260,6 +267,7 @@ cdef class GeneralMixtureModel(BayesModel):
 
                     for callback in callbacks:
                         callback.on_epoch_end(logs)
+                # print("DEBUG 5")
 
                 iteration += 1
                 last_log_probability_sum = log_probability_sum
@@ -271,8 +279,8 @@ cdef class GeneralMixtureModel(BayesModel):
 
         if verbose:
             total_time_spent = time.time() - training_start_time
-            print("Total Improvement: {}".format(total_improvement))
-            print("Total Time (s): {:.4f}".format(total_time_spent))
+            # print("Total Improvement: {}".format(total_improvement))
+            # print("Total Time (s): {:.4f}".format(total_time_spent))
 
         history = callbacks[0]
 
@@ -305,6 +313,7 @@ cdef class GeneralMixtureModel(BayesModel):
             The log probability of the data given the current model. This is
             used to speed up EM.
         """
+        # print("DEBUG 41")
 
         cdef int i, n, d
         cdef numpy.ndarray X_ndarray
@@ -320,6 +329,7 @@ cdef class GeneralMixtureModel(BayesModel):
         else:
             n, d = X.shape
 
+        # print("DEBUG 42")
         if weights is None:
             weights_ndarray = numpy.ones(n, dtype='float64')
         else:
@@ -328,13 +338,19 @@ cdef class GeneralMixtureModel(BayesModel):
         cdef double* X_ptr
         cdef double* weights_ptr = <double*> weights_ndarray.data
 
+        # print("DEBUG 43")
         if not self.is_vl_:
+            # print("DEBUG 431")
             X_ndarray = _check_input(X, self.keymap)
+            # print("DEBUG 432")
             X_ptr = <double*> X_ndarray.data
+            # print("DEBUG 433")
 
             with nogil:
+                # printf("DEBUG 434\n")
                 log_probability = self._summarize(X_ptr, weights_ptr, n,
                     0, self.d)
+                # printf("DEBUG 435\n")
 
         else:
             log_probability = 0.0
@@ -345,6 +361,7 @@ cdef class GeneralMixtureModel(BayesModel):
                 with nogil:
                     log_probability += self._summarize(X_ptr, weights_ptr+i,
                         d, 0, self.d)
+        # print("DEBUG 43")
 
         return log_probability
 
@@ -355,6 +372,7 @@ cdef class GeneralMixtureModel(BayesModel):
         cdef int i, j
         cdef double total, logp, log_probability_sum = 0.0
 
+        # printf("DEBUG 61\n")
         for j in range(self.n):
             if self.cython == 0:
                 with gil:
@@ -363,6 +381,7 @@ cdef class GeneralMixtureModel(BayesModel):
                 r[j*n] = (<Model> self.distributions_ptr[j])._vl_log_probability(X, n)
             else:
                 (<Model> self.distributions_ptr[j])._log_probability(X, r+j*n, n)
+        # printf("DEBUG 62\n")
 
         for i in range(n):
             total = NEGINF
@@ -379,6 +398,7 @@ cdef class GeneralMixtureModel(BayesModel):
 
             if self.is_vl_:
                 break
+        # printf("DEBUG 63\n")
 
         for j in range(self.n):
             if self.cython == 0:
@@ -387,13 +407,16 @@ cdef class GeneralMixtureModel(BayesModel):
             else:
                 (<Model> self.distributions_ptr[j])._summarize(X, r+j*n, n,
                     0, d)
+        # printf("DEBUG 63\n")
 
         with gil:
             for j in range(self.n):
                 self.summaries_ptr[j] += summaries[j]
+        # printf("DEBUG 64\n")
 
         free(r)
         free(summaries)
+        # printf("DEBUG 65\n")
         return log_probability_sum
 
     def to_dict(self):
@@ -571,12 +594,22 @@ cdef class GeneralMixtureModel(BayesModel):
                     raise ValueError("must pass in uninitialized distributions")
 
         X_kmeans, weights_kmeans = next(data_generator.batches())
+        # X_kmeans_norm = (X_kmeans - numpy.mean(X_kmeans, axis=0)) / numpy.std(X_kmeans, axis=0)
+        # plt.scatter(X_kmeans_norm[:,0], X_kmeans_norm[:,1])
+        # plt.show()
         kmeans = Kmeans(n_components, init=init, n_init=n_init)
+        # print(n_components, init, n_init)
         kmeans.fit(X_kmeans, weights=weights_kmeans, max_iterations=max_kmeans_iterations,
             batch_size=batch_size, batches_per_epoch=batches_per_epoch,
             n_jobs=n_jobs)
 
         y = kmeans.predict(X_kmeans)
+        # print("XKMEANS: ", X_kmeans)
+        # print("XKMEANS: ", X_kmeans[y == 0])
+        # print("icd: ", icd)
+        # plt.scatter(X_kmeans[y == 0, 0], X_kmeans[y == 0, 1])
+        # plt.scatter(X_kmeans[y == 1, 0], X_kmeans[y == 1, 1], color="red")
+        # plt.show()
 
         if icd:
             distributions = [IndependentComponentsDistribution.from_samples(

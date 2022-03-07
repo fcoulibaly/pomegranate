@@ -6,6 +6,7 @@
 
 
 import numpy
+import matplotlib.pyplot as plt
 import sys
 
 from ..utils import weight_set
@@ -174,8 +175,11 @@ cdef class Distribution(Model):
 		if items.ndim == 2:
 			d = items.shape[1]
 
+		# print("IN", self)
+
 		with nogil:
 			self._summarize(items_p, weights_p, n, column_id, d)
+		# print("OUT: ", self)
 
 	cdef double _summarize(self, double* items, double* weights, int n,
 		int column_idx, int d) nogil:

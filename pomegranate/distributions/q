@@ -7,7 +7,6 @@
 import numpy
 import scipy
 cimport cython
-import matplotlib.pyplot as plt
 
 from libc.stdlib cimport calloc
 from libc.stdlib cimport free
@@ -31,7 +30,6 @@ from libc.math cimport fabs as cabs
 from libc.math cimport pow as cpow
 from libc.math cimport isfinite as cisfinite
 
-from libc.stdio cimport printf
 
 
 # Define some useful constants
@@ -56,14 +54,13 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             self.ccoeffs = numpy.array(parameters[4])
             self.sigmas = numpy.array(parameters[5])
 
-    def __cinit__(self, alpha=1.0, beta=1.0, acoeffs=[], bcoeffs=[], ccoeffs=[], sigmas=[], bounds=None, frozen=False):
-        # printf("CINIT 1\n")
+    def __cinit__(self, alpha=1.0, beta=1.0, acoeffs=[], bcoeffs=[], ccoeffs=[], sigmas=[], frozen=False):
         """
         Take in the mean vector and the covariance matrix.
         """
         self.name = "PolyExpBetaNormal"
         self.frozen = frozen
-        self.d = len(sigmas) + 1
+        self.d = len(sigmas)
 
         self.alpha = alpha
         self.beta = beta
@@ -79,18 +76,11 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         self._ccoeffs = <double*> self.ccoeffs.data
         self._sigmas = <double*> self.sigmas.data
 
-        self.log_sigma_sqrt_2_pi = <double*> calloc(self.d-1, sizeof(double))
-        self.two_sigma_squared = <double*> calloc(self.d-1, sizeof(double))
-        self._bounds = <double*> calloc((self.d-1)*6, sizeof(double))
-        if bounds is None:
-            bounds = numpy.repeat([[[-1, 1],[-1, 1],[1, 25]]], self.d-1, axis=0)
-        for di in range(self.d-1):
+        self.log_sigma_sqrt_2_pi = <double*> calloc(self.d, sizeof(double))
+        self.two_sigma_squared = <double*> calloc(self.d, sizeof(double))
+        for di in range(self.d):
             self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI)
             self.two_sigma_squared[di] = 1. / (2 * self.sigmas[di] ** 2) if self.sigmas[di] > 0 else 0
-            for i in range(3):
-                for j in range(2):
-                    self._bounds[di*6+i*2+j] = bounds[di][i][j]
-        # printf("CINIT 2\n")
 
         # self.name = "PolyExpBetaNormal"
         # self.frozen = frozen
@@ -124,12 +114,9 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
 
     def __reduce__(self):
         """Serialize the distribution for pickle."""
-        # printf("REDUCE 1\n")
         return self.__class__, (self.alpha, self.beta, self.acoeffs, self.bcoeffs, self.ccoeffs, self.sigmas, self.frozen)
 
     def __dealloc__(self):
-        # printf("DEALLOC 1\n")
-        free(self._bounds)
         free(self.log_sigma_sqrt_2_pi)
         free(self.two_sigma_squared)
         # free(self._inv_dot_mu)
@@ -139,59 +126,15 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         # free(self.pair_sum)
         # free(self.pair_w_sum)
 
-
-    def log_probability(self, X):
-        """
-        What's the probability of a given tuple under this mixture? It's the
-        product of the probabilities of each X in the tuple under their
-        respective distribution, which is the sum of the log probabilities.
-        """
-
-        cdef int i, j, n
-        cdef numpy.ndarray X_ndarray
-        cdef double* X_ptr
-        cdef double logp
-        cdef numpy.ndarray logp_array
-        cdef double* logp_ptr
-
-        n = len(X)
-
-        X_ndarray = numpy.asarray(X, dtype='float64')
-        X_ptr = <double*> X_ndarray.data
-
-        logp_array = numpy.empty(n, dtype='float64')
-        logp_ptr = <double*> logp_array.data
-
-        with nogil:
-            self._log_probability(X_ptr, logp_ptr, n)
-
-        return logp_array
-
-
     cdef void _log_probability(self, double* X, double* logp, int n) nogil:
-        # printf("LOGPRO 1\n")
         cdef int i, j, d = self.d
 
-        memset(logp, 0, n*sizeof(double))
-
         for i in range(n):
-            if X[i*d] <= 0 or X[i*d] >= 1:
-                logp[i] = 0
-            else:
-                logp[i] = _log(X[i*d]) * (self._alpha - 1) + _log(1 - X[i*d]) * (self._beta - 1) + lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta)
-                for j in range(0, d - 1):
-                    logp[i] += self.log_sigma_sqrt_2_pi[j] - ((X[i*d+j+1] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d]))) ** 2) * self.two_sigma_squared[j]
-                logp[i] /= 1
-
-        # printf("%f %f, %f %f %f %f, %f %f\n", self._alpha, self._beta, self._acoeffs[0], self._bcoeffs[0], self._ccoeffs[0], self._sigmas[0], self.log_sigma_sqrt_2_pi[0], self.two_sigma_squared[0])
-        # with gil:
-            # nplog = numpy.zeros((n))
-            # nn = n
-            # for ii in range(nn):
-                # nplog[ii] = logp[ii]
-            # plt.hist(nplog);plt.show()
-
-
+            # if isnan(X[i*d + j]):
+            # TODO implement nan handling
+            logp[i] = X[i*d] ** (self._alpha - 1) + (1 - X[i*d]) ** (1 - self._beta) + lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta)
+            for j in range(1, d):
+                logp[i] += self.log_sigma_sqrt_2_pi[j] - ((X[i*d+j] - (self._acoeffs[j] + self._bcoeffs[j] * cexp(-self._ccoeffs[j] * X[i*d+j]))) ** 2) * self.two_sigma_squared[j]
 
     # cdef double _log_probability_missing(self, double* X) nogil: TODO implement nan handling
             # cdef double logp
@@ -241,19 +184,16 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double curval = pos[curind]
         cdef int offset = 0
         bins[0][0] = 0
-        # printf("BINS (%d): ", n)
         for i in range(n):
             cumw += weights[i]
             if cumw > curval:
                 offset = max(i, bins[curind][0] + 1)
-                # printf("%d %d, ", i, offset)
                 bins[curind][1] = offset
                 curind += 1
                 curval = pos[curind]
                 bins[curind][0] = offset
                 if curind + 1 >= nb_bins:
                     break
-        # printf("\n")
         bins[nb_bins-1][1] = n
 
         return
@@ -265,7 +205,6 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double accu = 0
 
         cdef int i,j
-        # printf("MEAN: ")
         for i in range(nb_bins):
             bl = bins[i][0]
             bh = bins[i][1]
@@ -274,12 +213,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             for j in range(bl, bh):
                 accu += x_view[j*d+di] * weights[j]  
                 cumr += weights[j]
-            if cumr == 0:
-                res[i] = 0
-            else:
-                res[i] = accu / cumr
-            # printf("%f, ", res[i])
-        # printf("\n")
+            res[i] = accu / cumr
         
         return
 
@@ -559,13 +493,13 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double xktmp[3]
 
         for i in range(100):
-            # printf(i)
+            # print(i)
             xktmp[0] = xk[0] + stp * pk[0]; xktmp[1] = xk[1] + stp * pk[1]; xktmp[2] = xk[2] + stp * pk[2]; 
             fval = self.compute_f(xktmp, wcparams)
             self.compute_gf(xktmp, wcparams, gfkp1)
             gfval = self.dot(gfkp1, pk)
-            # printf("START", brackt, stage, ginit,gtest,gx,gy,finit,fx,fy,stx,sty,stmin,stmax,width,width1)
-            # printf("PRE-DEBUG 1", stp, fval, gfval, ftol, gtol, xtol, stpmin, stpmax)
+            # print("START", brackt, stage, ginit,gtest,gx,gy,finit,fx,fy,stx,sty,stmin,stmax,width,width1)
+            # print("PRE-DEBUG 1", stp, fval, gfval, ftol, gtol, xtol, stpmin, stpmax)
             #   If psi(stp) <= 0 and f'(stp) >= 0 for some step, then the
             #   algorithm enters the second stage.
             ftest = finit + stp * gtest
@@ -663,7 +597,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
     cdef double norm(self, double x[3]) nogil:
         return csqrt(x[0]**2 + x[1]**2 + x[2]**2)
 
-    cdef void compute_polyexp_coeffs(self, Wcparams * wcparams, double a_prior, double b_prior, double c_prior, double res_view[3], double a_min, double a_max, double b_min, double b_max, double c_min, double c_max) nogil:
+    cdef void compute_polyexp_coeffs(self, Wcparams * wcparams, double a_prior, double b_prior, double c_prior, double res_view[3]) nogil:
         cdef int maxiter = 600
         cdef double gtol = 1e-5
         
@@ -704,19 +638,15 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double gnorm = self.vecnorm(gfk)
         while (gnorm > gtol) and (k < maxiter):
             self.dotmv(Hk, gfk, pk)
-            # with gil:
-                # print(xk, pk,  gfk)
             pk[0] = -pk[0]; pk[1] = -pk[1]; pk[2] = -pk[2]
-            # printf(xk, pk, gfk)
+            # print(xk, pk, gfk)
             tmp_fval = old_fval
             status, alpha_k, old_fval = self.line_search_wolfe1(xk, pk, gfk, gfkp1, old_fval, old_old_fval, wcparams)
             old_old_fval = tmp_fval
             if status:
                 break
 
-            # xkp1[0] = xk[0] + alpha_k * pk[0]; xkp1[1] = xk[1] + alpha_k * pk[1]; xkp1[2] = xk[2] + alpha_k * pk[2]
-            # xkp1[0] = cmin(cmax(xk[0] + alpha_k * pk[0], 0.0), 1); xkp1[1] = cmin(cmax(xk[1] + alpha_k * pk[1], -1.0), 1); xkp1[2] = cmin(cmax(xk[2] + alpha_k * pk[2], 1.0), 25.0)
-            xkp1[0] = cmin(cmax(xk[0] + alpha_k * pk[0], a_min), a_max); xkp1[1] = cmin(cmax(xk[1] + alpha_k * pk[1], b_min), b_max); xkp1[2] = cmin(cmax(xk[2] + alpha_k * pk[2], c_min), c_max)
+            xkp1[0] = xk[0] + alpha_k * pk[0]; xkp1[1] = xk[1] + alpha_k * pk[1]; xkp1[2] = xk[2] + alpha_k * pk[2]
             sk[0] = xkp1[0] - xk[0]; sk[1] = xkp1[1] - xk[1]; sk[2] = xkp1[2] - xk[2]
             xk[0] = xkp1[0]; xk[1] = xkp1[1]; xk[2] = xkp1[2]
 
@@ -734,7 +664,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
             # this was handled in numeric, let it remaines for more safety
             if rhok_inv == 0.:
                 rhok = 1000.0
-                #printf("Divide-by-zero encountered: rhok assumed large")
+                #print("Divide-by-zero encountered: rhok assumed large")
             else:
                 rhok = 1. / rhok_inv
 
@@ -779,21 +709,6 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         The sufficient statistics for a multivariate gaussian update is the sum of
         each column, and the sum of the outer products of the vectors.
         """
-        # with gil:
-            # npweights = numpy.zeros((n))
-            # xx = numpy.zeros((n, d))
-            # nn = n
-            # dd = d
-            # for ii in range(nn):
-                # npweights[ii] = weights[ii]
-                # for j in range(dd):
-                    # xx[ii][j] = X[ii*d+j]
-            # plt.scatter(xx[:,0], xx[:,1], c=npweights)
-            # plt.show()
-            # plt.hist(npweights);plt.show()
-
-        # printf("DEBUG 1\n")
-
         cdef double * polyexp_coeffs = <double*> calloc(d * 3, sizeof(double))
         cdef double * sigmas = <double*> calloc(d, sizeof(double))
         cdef double x_sum = 0.0, x2_sum = 0.0, w_sum = 0.0
@@ -811,98 +726,32 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         cdef double mu, var
         cdef int i, di
 
-        accu_sw = 0
-        for i in range(n):
-            accu_sw += weights[i]
-        if accu_sw < 50:
-            # printf("DEBUG 1.5   %f, %f, %f, %f, %f, %f, %f, %f, %f, %f\n", accu_sw, self._acoeffs[0], self._acoeffs[1], self._acoeffs[2], self._bcoeffs[0], self._bcoeffs[1], self._bcoeffs[2], self._ccoeffs[0], self._ccoeffs[1], self._ccoeffs[2])
-            return 0
         self.compute_bins(bins, weights, n)
 
-
-        cdef double cumexpweights
-        cdef double cumexpweightspond
-        cdef double tmpexpweight = 0.0
-        cdef double a_min, a_max, b_min, b_max, c_min, c_max
-            
-        # printf("DEBUG 2\n")
-        for di in range(d-1):
-
-            # printf("DEBUG 30 %f\n", accu_sw)
-            self.compute_bins_sum_ones(bins, wcparams.sws, weights, n, 1, 0)
-            # printf("DEBUG 31\n")
-            self.compute_bins_sum(bins, wcparams.sys, X, weights, n, d, di+1)
-            # printf("DEBUG 32\n")
-            self.compute_bins_mean(bins, wcparams.xms, X, weights, n, d, 0)
-            # printf("DEBUG 4\n")
-            # with gil:
-                # print(bins)
-                # print(wcparams.sws)
-                # print(wcparams.sys)
-                # print(wcparams.xms)
+        for di in range(d):
+            self.compute_bins_sum_ones(bins, wcparams.sws, weights, n, d, di)
+            self.compute_bins_sum(bins, wcparams.sys, X, weights, n, d, di)
+            self.compute_bins_mean(bins, wcparams.xms, X, weights, n, d, di)
+            accu_sw = 0
             accu_sy = 0
             accu_sy2 = 0
             min_y = 1
             max_y = 0
-            # printf("DEBUG 4.5")
             for i in range(n):
-                accu_x = X[i * d + di + 1]
-                min_y = cmin(accu_x, min_y)
-                max_y = cmax(accu_x, max_y)
-                accu_sy += accu_x * weights[i]
-                accu_sy2 += accu_x * accu_x * weights[i] #TODO weight**2 ??!
-            # printf("DEBUG 5\n")
+                accu_x = X[i * d + di]
+                min_y = cmin(min_y, accu_x)
+                max_y = cmax(max_y, accu_x)
+                accu_tmp = accu_x * weights[i]
+                accu_sw += weights[i]
+                accu_sy += accu_tmp
+                accu_sy2 += accu_tmp * accu_tmp
             wcparams.sw = accu_sw
             wcparams.sy = accu_sy
             wcparams.sy2 = accu_sy2
 
-            softmaxcum = 0.0
-            softmaxcumpond = 0.0
-            softmincum = 0.0
-            softmincumpond = 0.0
-            softmaxtmp = 0.0
-            softmintmp = 0.0
-            for i in range(n):
-                item = X[i*d+di+1]
-                softmaxtmp = cexp(200*(item-max_y)) * weights[i]
-                softmaxcum += softmaxtmp
-                softmaxcumpond += softmaxtmp * item
-                softmintmp = cexp(200*(min_y-item)) * weights[i] # TODO exp factor can be factorized
-                softmincum += softmintmp
-                softmincumpond += softmintmp * item
-            min_y = softmincumpond / softmincum
-            max_y = softmaxcumpond / softmaxcum
-            # printf("BOUNDS BOUNDS  BOUNDS   %f   %f\n", min_y, max_y)
+            sigmas[di] = accu_sy2 / accu_sw - cpow(accu_sy, 2.0) / cpow(accu_sw, 2.0)
+            self.compute_polyexp_coeffs(&wcparams, min_y, max_y - min_y, 25.0, polyexp_coeffs + i * 3)
 
-
-            # printf("DEBUG 6: %f %f %f %f %f\n", wcparams.sw,  wcparams.sy,  wcparams.sy2, min_y, max_y)
-            # printf("BOOOOOOU: %f  %f  %f  %d\n", wcparams.sw, wcparams.sy, wcparams.sy2, di)
-            # self.compute_polyexp_coeffs(&wcparams, self._acoeffs[di], self._bcoeffs[di], self._ccoeffs[di], polyexp_coeffs + di * 3)
-            # self.compute_polyexp_coeffs(&wcparams, min_y, max_y - min_y, 25, polyexp_coeffs + di * 3, a_min, a_max, b_min, b_max, c_min, c_max)
-            a_min = self._bounds[di*6+0*2+0]
-            a_max = self._bounds[di*6+0*2+1]
-            b_min = self._bounds[di*6+1*2+0]
-            b_max = self._bounds[di*6+1*2+1]
-            c_min = self._bounds[di*6+2*2+0]
-            c_max = self._bounds[di*6+2*2+1]
-            # printf("CCCCCCCC  %f %f %f  %f %f %f  %f %f %f \n", self._acoeffs[di], self._bcoeffs[di], self._ccoeffs[di], a_min, a_max, b_min, b_max, c_min, c_max)
-            self.compute_polyexp_coeffs(&wcparams, self._acoeffs[di], self._bcoeffs[di], self._ccoeffs[di], polyexp_coeffs + di * 3, a_min, a_max, b_min, b_max, c_min, c_max)
-            # printf("DEBUG 7\n")
-            
-            acoeff = polyexp_coeffs[di*3+0]
-            bcoeff = polyexp_coeffs[di*3+1]
-            ccoeff = polyexp_coeffs[di*3+2]
-            accu_sy = 0
-            accu_sy2 = 0
-            for i in range(n):
-                accu_x = X[i * d + di + 1] - (acoeff + bcoeff * cexp(-ccoeff * X[i * d]))
-                accu_tmp = accu_x * weights[i]
-                accu_sy += accu_tmp
-                accu_sy2 += accu_tmp * accu_x
-            sigmas[di] = csqrt(accu_sy2 / accu_sw - cpow(accu_sy, 2) / cpow(accu_sw, 2))
-            # printf("AAAAAAAAAAA %f\n", sigmas[di], di)
-
-        # printf("DEBUG 8\n")
         for i in range(n):
             item = X[i * d]
             w_sum += weights[i]
@@ -912,80 +761,65 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
         var = x2_sum / w_sum - x_sum ** 2.0 / w_sum ** 2.0
 
         with gil:
-            # printf("DEBUG 10\n")
-            for di in range(d-1):
-                self._acoeffs[di] = polyexp_coeffs[di*3]
-                self._bcoeffs[di] = polyexp_coeffs[di*3+1]
-                self._ccoeffs[di] = polyexp_coeffs[di*3+2]
-                self._sigmas[di] = sigmas[di]
-                self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI)
-                self.two_sigma_squared[di] = 1. / (2 * self.sigmas[di] ** 2) if self.sigmas[di] > 0 else 0
-            # print("BIMBABA: ", self.acoeffs, self.bcoeffs, self.ccoeffs)
-            self._alpha = ((mu ** 2.0 * (1-mu)) / var - mu)
-            self._beta = (((1 - mu) ** 2.0 * mu) / var - (1 - mu))
+            for di in range(d):
+                self._acoeffs[d] = polyexp_coeffs[d*3]
+                self._bcoeffs[d] = polyexp_coeffs[d*3+1]
+                self._ccoeffs[d] = polyexp_coeffs[d*3+2]
+            self._sigmas = sigmas
+            self._alpha = self.alpha * ((mu ** 2.0 * (1-mu)) / var - mu)
+            self._beta = self.beta * (((1 - mu) ** 2.0 * mu) / var - (1 - mu))
             self.alpha = self._alpha
             self.beta = self._beta
-            # print(self.acoeffs)
-            # print(self.bcoeffs)
-            # print(self.ccoeffs)
-            # print(self.alpha)
-            # print(self.beta)
-            # print(self.sigmas)
             
-        # printf("DEBUG 11\n")
         free(sigmas)
         free(polyexp_coeffs)
 
     def from_summaries(self, inertia=0.0, min_covar=1e-5):
-        # printf("FROM_SUMMARIES 1\n")
-        """
-        Set the parameters of this Distribution to maximize the likelihood of
-        the given sample. Items holds some sort of sequence. If weights is
-        specified, it holds a sequence of value to weight each item by.
-        """
+            """
+            Set the parameters of this Distribution to maximize the likelihood of
+            the given sample. Items holds some sort of sequence. If weights is
+            specified, it holds a sequence of value to weight each item by.
+            """
 
-        cdef int d = self.d, i, j, k
+            cdef int d = self.d, i, j, k
 
-        # If no summaries stored or the summary is frozen, don't do anything.
-        if self.frozen == True:# or w_sum < 1e-7:
-                return
+            # If no summaries stored or the summary is frozen, don't do anything.
+            if self.frozen == True:# or w_sum < 1e-7:
+                    return
+
+            for di in range(d):
+                self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI)
+                self.two_sigma_squared[di] = 1. / (2 * self.sigmas[di] ** 2) if self.sigmas[di] > 0 else 0
 
 
-
-        self.clear_summaries()
+            self.clear_summaries()
 
     def clear_summaries(self):
-        # printf("CLEAR_SUMMARIES 1\n")
         """Clear the summary statistics stored in the object."""
-        pass
-        # memset(self._sigmas, 0, self.d*sizeof(double))
-        # memset(self._acoeffs, 0, self.d*sizeof(double))
-        # memset(self._bcoeffs, 0, self.d*sizeof(double))
-        # memset(self._ccoeffs, 0, self.d*sizeof(double))
-        # self.alpha = 1.0
-        # self.beta = 1.0
-        # self._alpha = 1.0
-        # self._beta = 1.0
+
+        memset(self._sigmas, 0, self.d*sizeof(double))
+        memset(self._acoeffs, 0, self.d*sizeof(double))
+        memset(self._bcoeffs, 0, self.d*sizeof(double))
+        memset(self._ccoeffs, 0, self.d*sizeof(double))
+        self.alpha = 1.0
+        self.beta = 1.0
+        self._alpha = 1.0
+        self._beta = 1.0
 
     @classmethod
-    def from_samples(cls, X, weights=None, bounds=None, acoeffs=None, bcoeffs=None, ccoeffs=None, **kwargs):
-        # print("FROM_SAMPLES 1", X.shape)
+    def from_samples(cls, X, weights=None, **kwargs):
         """Fit a distribution to some data without pre-specifying it."""
 
-        distribution = cls.blank(X.shape[1], bounds=bounds, acoeffs=acoeffs, bcoeffs=bcoeffs, ccoeffs=ccoeffs)
-        # printf("FROM_SAMPLES 2\n")
+        distribution = cls.blank(X.shape[1])
         distribution.fit(X, weights, **kwargs)
-        # printf("FROM_SAMPLES 3\n")
         return distribution
 
     @classmethod
-    def blank(cls, d=2, bounds=None, acoeffs=None, bcoeffs=None, ccoeffs=None):
-        # printf("BLANK 1\n")
-        sigmas = numpy.zeros(d-1)
-        acoeffs = acoeffs or numpy.zeros(d-1)
-        bcoeffs = bcoeffs or numpy.zeros(d-1)
-        ccoeffs = ccoeffs or numpy.zeros(d-1)
+    def blank(cls, d=2):
+        sigmas = numpy.zeros(d)
+        acoeffs = numpy.zeros(d)
+        bcoeffs = numpy.zeros(d)
+        ccoeffs = numpy.zeros(d)
         alpha = 1.0
         beta = 1.0
-        # printf("BLANK 2\n")
-        return cls(alpha, beta, acoeffs, bcoeffs, ccoeffs, sigmas, bounds=bounds)
+        return cls(alpha, beta, acoeffs, bcoeffs, ccoeffs, sigmas)

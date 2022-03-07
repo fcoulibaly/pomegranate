@@ -29,6 +29,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
     cdef double* _bcoeffs
     cdef double* _ccoeffs
     cdef double* _sigmas
+    cdef double* _bounds
     cdef double* two_sigma_squared
     cdef double* log_sigma_sqrt_2_pi
     cdef void _log_probability(self, double* X, double* logp, int n) nogil
@@ -46,7 +47,7 @@ cdef class PolyExpBetaNormal(MultivariateDistribution):
     cdef void dotm(self, double m1[3][3], double m2[3][3], double res[3][3]) nogil
     cdef void dotmv(self, double m1[3][3], double v[3], double res[3]) nogil
     cdef double norm(self, double x[3]) nogil
-    cdef void compute_polyexp_coeffs(self, Wcparams * wcparams, double a_prior, double b_prior, double c_prior, double res_view[3]) nogil
+    cdef void compute_polyexp_coeffs(self, Wcparams * wcparams, double a_prior, double b_prior, double c_prior, double res_view[3], double a_min, double a_max, double b_min, double b_max, double c_min, double c_max) nogil
     
 
 

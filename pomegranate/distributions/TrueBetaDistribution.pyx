@@ -40,11 +40,11 @@ cdef class TrueBetaDistribution(Distribution):
 	cdef void _log_probability(self, double* X, double* log_probability, int n) nogil:
 		cdef int i
 		for i in range(n):
-			if isnan(X[i]):
+			if isnan(X[i]) or X[i] <= 0 or X[i] >= 1:
 				log_probability[i] = 0.
 			else:
-				log_probability[i] = X[i] ** (self.alpha - 1) + (1 - X[i]) ** (1 - self.beta) +\
-                                        lgamma(self.alpha + self.beta) - lgamma(alpha) - lgamma(beta)
+				log_probability[i] = _log(X[i]) * (self.alpha - 1) + _log(1 - X[i]) * (self.beta - 1) +\
+                                        lgamma(self.alpha + self.beta) - lgamma(self.alpha) - lgamma(self.beta)
 
 	def sample(self, n=None, random_state=None):
 		random_state = check_random_state(random_state)
@@ -85,8 +85,13 @@ cdef class TrueBetaDistribution(Distribution):
 		mu = self.summaries[1] / self.summaries[0]
 		var = self.summaries[2] / self.summaries[0] - self.summaries[1] ** 2.0 / self.summaries[0] ** 2.0
 
-		self.alpha = self.alpha * inertia + ((mu ** 2.0 * (1-mu)) / var - mu) * (1 - inertia)
-		self.beta = self.beta * inertia + (((1 - mu) ** 2.0 * mu) / var - (1 - mu)) * (1 - inertia)
+		if var == 0:
+			print("MU VAR", mu, var)
+			self.alpha = 1
+			self.beta = 1
+		else:
+			self.alpha = self.alpha * inertia + ((mu ** 2.0 * (1-mu)) / var - mu) * (1 - inertia)
+			self.beta = self.beta * inertia + (((1 - mu) ** 2.0 * mu) / var - (1 - mu)) * (1 - inertia)
 		self.summaries = [0, 0, 0]
 
 	def clear_summaries(self):
