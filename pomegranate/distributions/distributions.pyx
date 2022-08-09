@@ -19,6 +19,7 @@ from .BetaDistribution import BetaDistribution
 from .GammaDistribution import GammaDistribution
 from .DiscreteDistribution import DiscreteDistribution
 from .PoissonDistribution import PoissonDistribution
+from .PolyExpBetaNormalDistribution import PolyExpBetaNormalDistribution
 
 from .KernelDensities import KernelDensity
 from .KernelDensities import UniformKernelDensity

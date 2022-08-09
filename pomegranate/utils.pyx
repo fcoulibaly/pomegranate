@@ -12,6 +12,7 @@ from libc.math cimport isnan
 from scipy.linalg.cython_blas cimport dgemm
 
 
+
 cimport cython
 import numpy
 cimport numpy

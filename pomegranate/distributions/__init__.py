@@ -28,3 +28,5 @@ from .MultivariateGaussianDistribution import MultivariateGaussianDistribution
 from .DirichletDistribution import DirichletDistribution
 from .ConditionalProbabilityTable import ConditionalProbabilityTable
 from .JointProbabilityTable import JointProbabilityTable
+
+from .PolyExpBetaNormalDistribution import PolyExpBetaNormalDistribution

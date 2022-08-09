@@ -415,7 +415,7 @@ cdef class GeneralMixtureModel(BayesModel):
         n_init=1, init='kmeans++', max_kmeans_iterations=1, inertia=0.0,
         pseudocount=0.0, stop_threshold=0.1, max_iterations=1e8, batch_size=None,
         batches_per_epoch=None, lr_decay=0.0, callbacks=[], return_history=False,
-        verbose=False, n_jobs=1):
+        verbose=False, n_jobs=1, **kwargs):
         """Create a mixture model directly from the given dataset.
 
         First, k-means will be run using the given initializations, in order to
@@ -581,10 +581,10 @@ cdef class GeneralMixtureModel(BayesModel):
         if icd:
             distributions = [IndependentComponentsDistribution.from_samples(
                 X_kmeans[y == i], weights_kmeans[y == i], 
-                distributions=distributions) for i in range(n_components)]
+                distributions=distributions, **kwargs) for i in range(n_components)]
         else:
             distributions = [distribution.from_samples(X_kmeans[y == i],
-                weights_kmeans[y == i]) for i, distribution in enumerate(distributions)]
+                weights_kmeans[y == i], **kwargs) for i, distribution in enumerate(distributions)]
 
         class_weights = numpy.array([(weights_kmeans * (y == i)).mean() for i in range(n_components)])
 

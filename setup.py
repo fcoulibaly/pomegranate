@@ -29,6 +29,18 @@ filenames = [
     "parallel"
 ]
 
+regression_filenames = [
+    "lbfgsb.c",
+    "linesearch.c",
+    "linpack.c",
+    "miniCBLAS.c",
+    "print.c",
+    "subalgorithms.c",
+    "timer.c",
+    "polyexp.pyx",
+    "polyexp.pxd",
+]
+
 distributions = [
     'distributions',
     'UniformDistribution',
@@ -37,6 +49,7 @@ distributions = [
     'LogNormalDistribution',
     'ExponentialDistribution',
     'BetaDistribution',
+    'TrueBetaDistribution',
     'GammaDistribution',
     'DiscreteDistribution',
     'PoissonDistribution',
@@ -45,17 +58,36 @@ distributions = [
     'MultivariateGaussianDistribution',
     'DirichletDistribution',
     'ConditionalProbabilityTable',
-    'JointProbabilityTable'
+    'JointProbabilityTable',
+    'PolyExpBetaNormalDistribution',
 ]
 
 if not use_cython:
     extensions = [
         Extension("pomegranate.{}".format( name ), [ "pomegranate/{}.{}".format(name, ext) ]) for name in filenames
-    ] + [Extension("pomegranate.distributions.{}".format(dist), ["pomegranate/distributions/{}.{}".format(dist, ext)]) for dist in distributions]
+    ] + [
+        # Extension('pomegranate.distributions.PolyExpBetaNormalDistribution',
+                  # [ "pomegranate/regression{}.{}".format(name, ext) for name in filenames ] +
+                  # [ "pomegranate/distributions/PolyExpBetaNormalDistribution.{}".format(dist, ext) ]
+                  # )
+    ] + [
+        Extension("pomegranate.distributions.{}".format(dist), ["pomegranate/distributions/{}.{}".format(dist, ext)]) for dist in distributions
+    ] + [
+        Extension("pomegranate.regression.polyexp", [ "pomegranate/regression/polyexp.pyx" ])
+    ]
 else:
     extensions = [
             Extension("pomegranate.*", ["pomegranate/*.pyx"]),
-	        Extension("pomegranate.distributions.*", ["pomegranate/distributions/*.pyx"])
+            # Extension('pomegranate.distributions.PolyExpBetaNormalDistribution',
+                      # [ "pomegranate/regression/{}".format(name) for name in regression_filenames ] +
+                      # [ "pomegranate/distributions/PolyExpBetaNormalDistribution.pyx"]
+                      # ),
+    # Extension("pomegranate.distributions.*", ["pomegranate/distributions/*.pyx"])
+    ] + [
+        Extension("pomegranate.distributions.{}".format(dist), ["pomegranate/distributions/{}.{}".format(dist, ext)]) for dist in distributions
+    ] + [
+        Extension("pomegranate.regression.polyexp", [ "pomegranate/regression/{}".format(name) for name in regression_filenames ]
+        )
     ]
 
     extensions = cythonize(extensions, compiler_directives={'language_level' : "2"})
