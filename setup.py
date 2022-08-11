@@ -49,7 +49,7 @@ distributions = [
     'LogNormalDistribution',
     'ExponentialDistribution',
     'BetaDistribution',
-    'TrueBetaDistribution',
+    # 'TrueBetaDistribution',
     'GammaDistribution',
     'DiscreteDistribution',
     'PoissonDistribution',
