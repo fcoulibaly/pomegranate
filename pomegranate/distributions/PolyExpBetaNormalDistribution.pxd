@@ -16,8 +16,8 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
 
     cdef int has_apriori
 
-    cdef double _alpha
-    cdef double _beta
+    cdef public double _alpha
+    cdef public double _beta
     cdef double lgamma_constants
     cdef double* log_sigma_sqrt_2_pi
     cdef double* two_sigma_squared

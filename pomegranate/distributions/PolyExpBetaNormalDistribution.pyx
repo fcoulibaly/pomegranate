@@ -51,7 +51,7 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
 
     def __cinit__(self, coeffs=[], sigmas=[], alpha=1, beta=1, lower_bounds=[], upper_bounds=[], frozen=False):
         """
-        For n (n in N) reflectances rn, and depth x
+            For n (n in N) reflectances rn, and depth x
 
             coeffs = [[a1, b1, c1], [a2, b2, c2], ..., [an, bn, cn]]
             with an, bn, cn coeffs for reflectance equation yn = an + bn * e^(-cn * x)
@@ -125,16 +125,14 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
             raise NotImplemented("GPU is not available for BNPE distributions")
         else:
             for i in range(n):
-                if X[i*d] <= 0 or X[i*self.d] >= 1:
+                if X[i*self.d] <= 0 or X[i*self.d] >= 1:
                     logp[i] = 0
                 else:
                     # Depth beta-distribution likelyhood
                     x = X[i*self.d]
-                    logp[i] = _log(x) * (self._alpha - 1) + _log(1 - x) * (self._beta - 1) + self.lgamma_constants
+                    logp[i] = _log(x) * (self._alpha-1) + _log(1 - x) * (self._beta-1) + self.lgamma_constants
                     for j in range(d):
                         # Dimension specific normal distribution likelyhood
-                        # printf("%f, %f, %f\n", self._acoeffs[j], self._bcoeffs[j], self._ccoeffs[j])
-                        # printf("R: %f, %f, %f\n", self._coeffs[0], self._coeffs[1], self._coeffs[2])
                         logp[i] += self.log_sigma_sqrt_2_pi[j] - ((X[i*self.d+j+1] - (self._coeffs[j*3] + self._coeffs[j*3+1] * cexp(-self._coeffs[j*3+2] * x))) ** 2) * self.two_sigma_squared[j]
 
 
@@ -200,22 +198,37 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
                 accu_tmp = accu_x * weights[i]
                 accu_sy += accu_tmp
                 accu_sy2 += accu_tmp * accu_x
-            self._infered_sigmas[di] = csqrt(accu_sy2 / accu_sw - cpow(accu_sy, 2) / cpow(accu_sw, 2))
+            if accu_sw == 0:
+                self._infered_sigmas[di] = 0
+            else:
+                self._infered_sigmas[di] = csqrt(accu_sy2 / accu_sw - cpow(accu_sy, 2) / cpow(accu_sw, 2))
             
             self._infered_coeffs[di*3+0] = a
             self._infered_coeffs[di*3+1] = b
             self._infered_coeffs[di*3+2] = c
 
+        w_sum = 0.0
+        x_sum = 0.0
+        x2_sum = 0.0
         for i in range(n):
             item = X[i * self.d]
             w_sum += weights[i]
             x_sum += item * weights[i]
             x2_sum += item * item * weights[i]
-        mu = x_sum / w_sum
-        var = x2_sum / w_sum - x_sum ** 2.0 / w_sum ** 2.0
 
-        self._infered_alpha = ((mu ** 2.0 * (1-mu)) / var - mu)
-        self._infered_beta = (((1 - mu) ** 2.0 * mu) / var - (1 - mu))
+        if w_sum == 0:
+            mu = 0
+            var = 0
+        else:
+            mu = x_sum / w_sum
+            var = x2_sum / w_sum - x_sum ** 2.0 / w_sum ** 2.0
+
+        if var == 0:
+            self._infered_alpha = 1
+            self._infered_beta = 1
+        else:
+            self._infered_alpha = ((mu ** 2.0 * (1-mu)) / var - mu)
+            self._infered_beta = (((1 - mu) ** 2.0 * mu) / var - (1 - mu))
         
 
     def from_summaries(self, inertia=0.0, min_covar=1e-5):
@@ -228,11 +241,10 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
         self.sigmas[:] = self.sigmas * inertia + self.infered_sigmas * (1 - inertia)
         self._alpha = self._alpha * inertia + self._infered_alpha * (1 - inertia)
         self._beta = self._beta * inertia + self._infered_beta * (1 - inertia)
-        # print(id(self), self.coeffs, self.sigmas, self._alpha, self._beta)
 
         self.lgamma_constants = lgamma(self._alpha + self._beta) - lgamma(self._alpha) - lgamma(self._beta)
         for di in range(self.d-1): # TODO update later
-            self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI)
+            self.log_sigma_sqrt_2_pi[di] = -_log(self.sigmas[di] * SQRT_2_PI) if self.sigmas[di] > 0 else 0
             self.two_sigma_squared[di] = 1. / (2 * self.sigmas[di] ** 2) if self.sigmas[di] > 0 else 0
 
         self.clear_summaries()
@@ -284,8 +296,10 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
         Returns a rough apriori for a,b and c params that can be
         used as starting point for L-BFGS-B regression
         """
+        # plt.scatter(d, y, c=weights)
+        # plt.show()
         if weights is None:
-            weights = numpy.ones(len(d), dtype=numpy.float)
+            weights = numpy.ones(len(d), dtype=float)
 
         if len(d) >= 10_000:
             inds = numpy.random.choice(len(weights), 10_000, p = weights/sum(weights))
@@ -296,7 +310,6 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
         # plt.scatter(d, y, c=weights)
         # plt.show()
 
-        # print("Computing (a,b,c) apriori")
         n = len(d)
 
         ori_d = d
@@ -357,10 +370,13 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
             cmin,cmax = -30.,-0.001
 
         c = bisection(cmin,cmax,10)
-        b = (y2-y1) / (numpy.exp(-c * d2) - numpy.exp(-c * d1))
+        tmp = (numpy.exp(-c * d2) - numpy.exp(-c * d1))
+        if tmp != 0:
+            b = (y2-y1) / tmp
+        else:
+            b = 0
         a = y1 - b * numpy.exp(-c * d1)
 
-        # print("apriori computed: {},{},{}".format(a, b, c))
         return a,b,c
 
     @classmethod
@@ -368,19 +384,26 @@ cdef class PolyExpBetaNormalDistribution(MultivariateDistribution):
         """Fit a distribution to some data without pre-specifying it."""
 
         # Dimension minus 1 because the first is the beta-based dimension
-        distribution = cls.blank(X.shape[1], lower_bounds, upper_bounds)
+        distribution = cls.blank(X.shape[1], lower_bounds=lower_bounds, upper_bounds=upper_bounds, **kwargs)
 
-        for di in range(1, X.shape[1]):
-            apriori = distribution.abc_apriori(X[:,0], X[:,di], weights)
-            distribution.coeffs[di-1,:] = numpy.clip(
-                numpy.where(distribution.lower_bounds[di-1] == numpy.inf, -numpy.inf, distribution.lower_bounds[di-1]), apriori, distribution.upper_bounds[di-1])
-        distribution.fit(X, weights, **kwargs)
+        if "coeffs" not in kwargs:
+            for di in range(1, X.shape[1]):
+                apriori = distribution.abc_apriori(X[:,0], X[:,di], weights)
+                lower = numpy.where(distribution.lower_bounds[di-1] == numpy.inf, -numpy.inf, distribution.lower_bounds[di-1])
+                upper = distribution.upper_bounds[di-1]
+                distribution.coeffs[di-1,:] = numpy.clip(lower, apriori, upper)
+        distribution.fit(X, weights)
+        # for di in range(1, X.shape[1]):
         return distribution
 
     @classmethod
-    def blank(cls, d=2, lower_bounds=[], upper_bounds=[]):
-        coeffs = numpy.zeros((d-1, 3))
-        sigmas = numpy.zeros(d-1)
-        alpha = 1.
-        beta = 1.
+    def blank(cls, d=2, coeffs=None, sigmas=None, alpha=None, beta=None, lower_bounds=[], upper_bounds=[]):
+        if coeffs is None:
+            coeffs = numpy.zeros((d-1, 3))
+        if sigmas is None:
+            sigmas = numpy.zeros(d-1)
+        if alpha is None:
+            alpha = 1.
+        if beta is None:
+            beta = 1.
         return cls(coeffs, sigmas, alpha, beta, lower_bounds, upper_bounds)
