@@ -117,7 +117,7 @@ setup(
     ext_modules=extensions,
     cmdclass={'build_ext':build_ext},
     setup_requires=[
-        "cython >= 0.22.1",
+        "cython >= 3.0.0",
         "numpy >= 1.20.0",
         "scipy >= 0.17.0"
     ],
