@@ -86,7 +86,7 @@ else:
     ] + [
         Extension("pomegranate.distributions.{}".format(dist), ["pomegranate/distributions/{}.{}".format(dist, ext)]) for dist in distributions
     ] + [
-        Extension("pomegranate.regression.polyexp", [ "pomegranate/regression/{}".format(name) for name in regression_filenames ]
+        Extension("pomegranate.regression.{}".format(dist), [ "pomegranate/regression/{}.{}".format(dist, ext)]) for name in regression_filenames ]
         )
     ]
 
