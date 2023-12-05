@@ -29,7 +29,7 @@ filenames = [
     "parallel"
 ]
 
-regression_filenames = [
+regression = [
     "lbfgsb.c",
     "linesearch.c",
     "linpack.c",
