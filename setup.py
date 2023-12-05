@@ -86,7 +86,7 @@ else:
     ] + [
         Extension("pomegranate.distributions.{}".format(dist), ["pomegranate/distributions/{}.{}".format(dist, ext)]) for dist in distributions
     ] + [
-        Extension("pomegranate.regression.{}".format(name), [ "pomegranate/regression/{}.{}".format(name, ext)]) for name in regression_filenames ])
+        Extension("pomegranate.regression.{}".format(name), [ "pomegranate/regression/{}.{}".format(name, ext)]) for name in regression_filenames ]
     ]
 
     extensions = cythonize(extensions, compiler_directives={'language_level' : "2"})
