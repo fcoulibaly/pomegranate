@@ -29,7 +29,7 @@ filenames = [
     "parallel"
 ]
 
-regression = [
+regression_filenames = [
     "lbfgsb.c",
     "linesearch.c",
     "linpack.c",
@@ -135,6 +135,7 @@ setup(
     package_data={
         'pomegranate': ['*.pyd', '*.pxd'],
         'pomegranate/distributions': ['*.pyd', '*.pxd'],
+        'pomegranate/regression': ['*.pyd', '*.pxd'],
     },
     include_package_data=True,
     zip_safe=False,
