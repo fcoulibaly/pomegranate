@@ -108,7 +108,6 @@ setup(
     packages=[
         'pomegranate',
         'pomegranate/distributions',
-        'pomegranate/regression',
     ],
     url='http://pypi.python.org/pypi/pomegranate/',
     license='MIT',
