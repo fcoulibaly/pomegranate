@@ -38,7 +38,6 @@ regression_filenames = [
     "subalgorithms.c",
     "timer.c",
     "polyexp.pyx",
-    "polyexp.pxd",
 ]
 
 distributions = [
@@ -86,7 +85,7 @@ else:
     ] + [
         Extension("pomegranate.distributions.{}".format(dist), ["pomegranate/distributions/{}.{}".format(dist, ext)]) for dist in distributions
     ] + [
-        Extension("pomegranate.regression.polyexp", [ "pomegranate/regression/polyexp.pyx" ])
+        Extension("pomegranate.regression.polyexp", [ "pomegranate/regression/{}".format(name) for name in regression_filenames ])
         
     ]
 
