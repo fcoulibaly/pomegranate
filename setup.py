@@ -87,6 +87,7 @@ else:
         Extension("pomegranate.distributions.{}".format(dist), ["pomegranate/distributions/{}.{}".format(dist, ext)]) for dist in distributions
     ] + [
         Extension("pomegranate.regression.polyexp", [ "pomegranate/regression/polyexp.pyx" ])
+        
     ]
 
     extensions = cythonize(extensions, compiler_directives={'language_level' : "2"})
